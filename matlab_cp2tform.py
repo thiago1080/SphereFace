@@ -10,162 +10,6 @@ from numpy.linalg import inv, norm, lstsq
 from numpy.linalg import matrix_rank as rank
 
 
-"""
-Introduction:
-----------
-numpy implemetation form matlab function CP2TFORM(...)
-with 'transformtype':
-    1) 'nonreflective similarity'
-    2) 'similarity'
-
-
-MATLAB code:
-----------
-%--------------------------------------
-% Function  findNonreflectiveSimilarity
-%
-function [trans, output] = findNonreflectiveSimilarity(uv,xy,options)
-%
-% For a nonreflective similarity:
-%
-% let sc = s*cos(theta)
-% let ss = s*sin(theta)
-%
-%                   [ sc -ss
-% [u v] = [x y 1] *   ss  sc
-%                     tx  ty]
-%
-% There are 4 unknowns: sc,ss,tx,ty.
-%
-% Another way to write this is:
-%
-% u = [x y 1 0] * [sc
-%                  ss
-%                  tx
-%                  ty]
-%
-% v = [y -x 0 1] * [sc
-%                   ss
-%                   tx
-%                   ty]
-%
-% With 2 or more correspondence points we can combine the u equations and
-% the v equations for one linear system to solve for sc,ss,tx,ty.
-%
-% [ u1  ] = [ x1  y1  1  0 ] * [sc]
-% [ u2  ]   [ x2  y2  1  0 ]   [ss]
-% [ ... ]   [ ...          ]   [tx]
-% [ un  ]   [ xn  yn  1  0 ]   [ty]
-% [ v1  ]   [ y1 -x1  0  1 ]
-% [ v2  ]   [ y2 -x2  0  1 ]
-% [ ... ]   [ ...          ]
-% [ vn  ]   [ yn -xn  0  1 ]
-%
-% Or rewriting the above matrix equation:
-% U = X * r, where r = [sc ss tx ty]'
-% so r = X\U.
-%
-
-K = options.K;
-M = size(xy,1);
-x = xy(:,1);
-y = xy(:,2);
-X = [x   y  ones(M,1)   zeros(M,1);
-     y  -x  zeros(M,1)  ones(M,1)  ];
-
-u = uv(:,1);
-v = uv(:,2);
-U = [u; v];
-
-% We know that X * r = U
-if rank(X) >= 2*K
-    r = X \ U;
-else
-    error(message('images:cp2tform:twoUniquePointsReq'))
-end
-
-sc = r(1);
-ss = r(2);
-tx = r(3);
-ty = r(4);
-
-Tinv = [sc -ss 0;
-        ss  sc 0;
-        tx  ty 1];
-
-T = inv(Tinv);
-T(:,3) = [0 0 1]';
-
-trans = maketform('affine', T);
-output = [];
-
-%-------------------------
-% Function  findSimilarity
-%
-function [trans, output] = findSimilarity(uv,xy,options)
-%
-% The similarities are a superset of the nonreflective similarities as they may
-% also include reflection.
-%
-% let sc = s*cos(theta)
-% let ss = s*sin(theta)
-%
-%                   [ sc -ss
-% [u v] = [x y 1] *   ss  sc
-%                     tx  ty]
-%
-%          OR
-%
-%                   [ sc  ss
-% [u v] = [x y 1] *   ss -sc
-%                     tx  ty]
-%
-% Algorithm:
-% 1) Solve for trans1, a nonreflective similarity.
-% 2) Reflect the xy data across the Y-axis,
-%    and solve for trans2r, also a nonreflective similarity.
-% 3) Transform trans2r to trans2, undoing the reflection done in step 2.
-% 4) Use TFORMFWD to transform uv using both trans1 and trans2,
-%    and compare the results, Returnsing the transformation corresponding
-%    to the smaller L2 norm.
-
-% Need to reset options.K to prepare for calls to findNonreflectiveSimilarity.
-% This is safe because we already checked that there are enough point pairs.
-options.K = 2;
-
-% Solve for trans1
-[trans1, output] = findNonreflectiveSimilarity(uv,xy,options);
-
-
-% Solve for trans2
-
-% manually reflect the xy data across the Y-axis
-xyR = xy;
-xyR(:,1) = -1*xyR(:,1);
-
-trans2r  = findNonreflectiveSimilarity(uv,xyR,options);
-
-% manually reflect the tform to undo the reflection done on xyR
-TreflectY = [-1  0  0;
-              0  1  0;
-              0  0  1];
-trans2 = maketform('affine', trans2r.tdata.T * TreflectY);
-
-
-% Figure out if trans1 or trans2 is better
-xy1 = tformfwd(trans1,uv);
-norm1 = norm(xy1-xy);
-
-xy2 = tformfwd(trans2,uv);
-norm2 = norm(xy2-xy);
-
-if norm1 <= norm2
-    trans = trans1;
-else
-    trans = trans2;
-end
-"""
-
 class MatlabCp2tormException(Exception):
     def __str__(self):
         return 'In File {}:{}'.format(
@@ -221,91 +65,26 @@ def tforminv(trans, uv):
 
 
 def findNonreflectiveSimilarity(uv, xy, options=None):
-    """
-    Function:
-    ----------
-        Find Non-reflective Similarity Transform Matrix 'trans':
-            u = uv[:, 0]
-            v = uv[:, 1]
-            x = xy[:, 0]
-            y = xy[:, 1]
-            [x, y, 1] = [u, v, 1] * trans
 
-    Parameters:
-    ----------
-        @uv: Kx2 np.array
-            source points each row is a pair of coordinates (x, y)
-        @xy: Kx2 np.array
-            each row is a pair of inverse-transformed
-        @option: not used, keep it as None
-
-    Returns:
-        @trans: 3x3 np.array
-            transform matrix from uv to xy
-        @trans_inv: 3x3 np.array
-            inverse of trans, transform matrix from xy to uv
-
-    Matlab:
-    ----------
-    % For a nonreflective similarity:
-    %
-    % let sc = s*cos(theta)
-    % let ss = s*sin(theta)
-    %
-    %                   [ sc -ss
-    % [u v] = [x y 1] *   ss  sc
-    %                     tx  ty]
-    %
-    % There are 4 unknowns: sc,ss,tx,ty.
-    %
-    % Another way to write this is:
-    %
-    % u = [x y 1 0] * [sc
-    %                  ss
-    %                  tx
-    %                  ty]
-    %
-    % v = [y -x 0 1] * [sc
-    %                   ss
-    %                   tx
-    %                   ty]
-    %
-    % With 2 or more correspondence points we can combine the u equations and
-    % the v equations for one linear system to solve for sc,ss,tx,ty.
-    %
-    % [ u1  ] = [ x1  y1  1  0 ] * [sc]
-    % [ u2  ]   [ x2  y2  1  0 ]   [ss]
-    % [ ... ]   [ ...          ]   [tx]
-    % [ un  ]   [ xn  yn  1  0 ]   [ty]
-    % [ v1  ]   [ y1 -x1  0  1 ]
-    % [ v2  ]   [ y2 -x2  0  1 ]
-    % [ ... ]   [ ...          ]
-    % [ vn  ]   [ yn -xn  0  1 ]
-    %
-    % Or rewriting the above matrix equation:
-    % U = X * r, where r = [sc ss tx ty]'
-    % so r = X\U.
-    %
-    """
     options = {'K': 2}
 
     K = options['K']
     M = xy.shape[0]
     x = xy[:, 0].reshape((-1, 1))  # use reshape to keep a column vector
     y = xy[:, 1].reshape((-1, 1))  # use reshape to keep a column vector
-    # print '--->x, y:\n', x, y
+    # print ('--->x, y:\n', x, y
 
     tmp1 = np.hstack((x, y, np.ones((M, 1)), np.zeros((M, 1))))
     tmp2 = np.hstack((y, -x, np.zeros((M, 1)), np.ones((M, 1))))
     X = np.vstack((tmp1, tmp2))
-    # print '--->X.shape: ', X.shape
-    # print 'X:\n', X
+    # print ('--->X.shape: ', X.shape
+    # print ('X:\n', X
 
     u = uv[:, 0].reshape((-1, 1))  # use reshape to keep a column vector
     v = uv[:, 1].reshape((-1, 1))  # use reshape to keep a column vector
     U = np.vstack((u, v))
-    # print '--->U.shape: ', U.shape
-    # print 'U:\n', U
+    # print ('--->U.shape: ', U.shape
+    # print ('U:\n', U
 
     # We know that X * r = U
     if rank(X) >= 2 * K:
@@ -314,7 +93,7 @@ def findNonreflectiveSimilarity(uv, xy, options=None):
     else:
         raise Exception('cp2tform:twoUniquePointsReq')
 
-    # print '--->r:\n', r
+    # print ('--->r:\n', r
 
     sc = r[0]
     ss = r[1]
@@ -327,10 +106,10 @@ def findNonreflectiveSimilarity(uv, xy, options=None):
         [tx,  ty, 1]
     ])
 
-    # print '--->Tinv:\n', Tinv
+    # print ('--->Tinv:\n', Tinv
 
     T = inv(Tinv)
-    # print '--->T:\n', T
+    # print ('--->T:\n', T
 
     T[:, 2] = np.array([0, 0, 1])
 
@@ -584,43 +363,43 @@ if __name__ == '__main__':
     uv = np.array((u, v)).T
     xy = np.array((x, y)).T
 
-    print '\n--->uv:'
-    print uv
-    print '\n--->xy:'
-    print xy
+    print ('\n--->uv:')
+    print (uv)
+    print ('\n--->xy:')
+    print (xy)
 
     trans, trans_inv = get_similarity_transform(uv, xy)
 
-    print '\n--->trans matrix:'
-    print trans
+    print ('\n--->trans matrix:')
+    print (trans)
 
-    print '\n--->trans_inv matrix:'
-    print trans_inv
+    print ('\n--->trans_inv matrix:')
+    print (trans_inv)
 
-    print '\n---> apply transform to uv'
-    print '\nxy_m = uv_augmented * trans'
+    print ('\n---> apply transform to uv')
+    print ('\nxy_m = uv_augmented * trans')
     uv_aug = np.hstack((
         uv, np.ones((uv.shape[0], 1))
     ))
     xy_m = np.dot(uv_aug, trans)
-    print xy_m
+    print (xy_m)
 
-    print '\nxy_m = tformfwd(trans, uv)'
+    print ('\nxy_m = tformfwd(trans, uv)')
     xy_m = tformfwd(trans, uv)
-    print xy_m
+    print (xy_m)
 
-    print '\n---> apply inverse transform to xy'
-    print '\nuv_m = xy_augmented * trans_inv'
+    print ('\n---> apply inverse transform to xy')
+    print ('\nuv_m = xy_augmented * trans_inv')
     xy_aug = np.hstack((
         xy, np.ones((xy.shape[0], 1))
     ))
     uv_m = np.dot(xy_aug, trans_inv)
-    print uv_m
+    print (uv_m)
 
-    print '\nuv_m = tformfwd(trans_inv, xy)'
+    print ('\nuv_m = tformfwd(trans_inv, xy)')
     uv_m = tformfwd(trans_inv, xy)
-    print uv_m
+    print (uv_m)
 
     uv_m = tforminv(trans, xy)
-    print '\nuv_m = tforminv(trans, xy)'
-    print uv_m
+    print ('\nuv_m = tforminv(trans, xy)')
+    print (uv_m)
