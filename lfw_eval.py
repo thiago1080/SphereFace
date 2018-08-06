@@ -34,21 +34,34 @@ def KFold(n=6000, n_folds=10, shuffle=False):
     folds = []
     base = list(range(n))
     for i in range(n_folds):
-        test = base[i*n/n_folds:(i+1)*n/n_folds]
+        a, b = int(i*n/n_folds), int((i+1)*n/n_folds)
+        test = base[a:b]
         train = list(set(base)-set(test))
         folds.append([train,test])
     return folds
+
+def eval_acc2(threshold, diff):
+    for d in diff:
+        print(d[2])
+    #print(diff)
+    return 0
 
 def eval_acc(threshold, diff):
     y_true = []
     y_predict = []
     for d in diff:
+        if type(d) == str or type(d) == int:
+            continue
         same = 1 if float(d[2]) > threshold else 0
         y_predict.append(same)
         y_true.append(int(d[3]))
     y_true = np.array(y_true)
     y_predict = np.array(y_predict)
-    accuracy = 1.0*np.count_nonzero(y_true==y_predict)/len(y_true)
+    if len(y_true) == 0:
+        accuracy = 0.001
+    else:
+        accuracy = 1.0*np.count_nonzero(y_true==y_predict)/len(y_true)
+    print(accuracy)
     return accuracy
 
 def find_best_threshold(thresholds, predicts):
@@ -64,7 +77,7 @@ def find_best_threshold(thresholds, predicts):
 
 parser = argparse.ArgumentParser(description='PyTorch sphereface lfw')
 parser.add_argument('--net','-n', default='sphere20a', type=str)
-parser.add_argument('--lfw', default='../../dataset/face/lfw/lfw.zip', type=str)
+parser.add_argument('--lfw', default='datasets/lfw.zip', type=str)
 parser.add_argument('--model','-m', default='sphere20a.pth', type=str)
 args = parser.parse_args()
 
@@ -86,19 +99,17 @@ for line in landmark_lines:
 
 with open('data/pairs.txt') as f:
     pairs_lines = f.readlines()[1:]
-
 for i in range(6000):
     p = pairs_lines[i].replace('\n','').split('\t')
 
     if 3==len(p):
         sameflag = 1
-        name1 = p[0]+'/'+p[0]+'_'+'{:04}.jpg'.format(int(p[1]))
-        name2 = p[0]+'/'+p[0]+'_'+'{:04}.jpg'.format(int(p[2]))
+        name1 = p[0]+'/'+p[0]+'_'+'{:04}.png'.format(int(p[1]))
+        name2 = p[0]+'/'+p[0]+'_'+'{:04}.png'.format(int(p[2]))
     if 4==len(p):
         sameflag = 0
-        name1 = p[0]+'/'+p[0]+'_'+'{:04}.jpg'.format(int(p[1]))
-        name2 = p[2]+'/'+p[2]+'_'+'{:04}.jpg'.format(int(p[3]))
-
+        name1 = p[0]+'/'+p[0]+'_'+'{:04}.png'.format(int(p[1]))
+        name2 = p[2]+'/'+p[2]+'_'+'{:04}.png'.format(int(p[3]))
     img1 = alignment(cv2.imdecode(np.frombuffer(zfile.read(name1),np.uint8),1),landmark[name1])
     img2 = alignment(cv2.imdecode(np.frombuffer(zfile.read(name2),np.uint8),1),landmark[name2])
 
@@ -113,16 +124,29 @@ for i in range(6000):
     f = output.data
     f1,f2 = f[0],f[2]
     cosdistance = f1.dot(f2)/(f1.norm()*f2.norm()+1e-5)
-    predicts.append('{}\t{}\t{}\t{}\n'.format(name1,name2,cosdistance,sameflag))
+    fcosdistance = ('{}'.format(cosdistance))
+    predicts.append((name1,name2,fcosdistance,sameflag))
 
 
 accuracy = []
 thd = []
 folds = KFold(n=6000, n_folds=10, shuffle=False)
 thresholds = np.arange(-1.0, 1.0, 0.005)
-predicts = np.array(map(lambda line:line.strip('\n').split(), predicts))
+#predicts = np.array(map(lambda line:line.strip('\n').split(), predicts))
+print('alskdfjalskdfjklasdfj')
+print(len(predicts))
+print(len(folds))
+print('alskdfjalskdfjklasdfj')
 for idx, (train, test) in enumerate(folds):
-    best_thresh = find_best_threshold(thresholds, predicts[train])
-    accuracy.append(eval_acc(best_thresh, predicts[test]))
+    print(idx)
+    tmp = []
+    for i in train:
+        tmp.append(predicts[i])
+    tmp2 = []
+    for i in test:
+        tmp.append(predicts[i])
+
+    best_thresh = find_best_threshold(thresholds, tmp)
+    accuracy.append(eval_acc(best_thresh, predicts[1]))
     thd.append(best_thresh)
 print('LFWACC={:.4f} std={:.4f} thd={:.4f}'.format(np.mean(accuracy), np.std(accuracy), np.mean(thd)))
